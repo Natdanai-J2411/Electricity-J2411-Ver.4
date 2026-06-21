@@ -1,0 +1,1545 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard ค่าไฟฟ้า — แผนกสายพาน</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#0c1316; --bg2:#0f181d; --panel:#15222a; --panel2:#1a2c35;
+  --line:#27404b; --line-soft:#1d3039;
+  --text:#e8f0f3; --muted:#90a6b1; --dim:#62798410;
+  --dimtext:#637984;
+  --bwe:#ff8d5c; --crusher:#ffb648; --conveyor:#34d3cf; --spd:#9d8cff;
+  --A:#ffb648; --B:#34d3cf; --N:#9d8cff;
+  --ok:#5fd08a; --warn:#ffcf5c; --bad:#ff6b6b;
+  --glow: 0 0 0 1px rgba(255,182,72,.0);
+  --mono:'JetBrains Mono','SF Mono',ui-monospace,monospace;
+  --sans:'Inter','Noto Sans Thai','Segoe UI',system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:
+    radial-gradient(1200px 600px at 85% -10%, rgba(52,211,207,.06), transparent 60%),
+    radial-gradient(900px 500px at -5% 0%, rgba(255,182,72,.05), transparent 55%),
+    var(--bg);
+  color:var(--text); font-family:var(--sans); font-size:14px; line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+}
+.num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+a{color:var(--conveyor)}
+
+/* ---------- top bar ---------- */
+.topbar{
+  position:sticky; top:0; z-index:40;
+  display:flex; align-items:center; gap:18px;
+  padding:14px 22px; background:rgba(10,17,21,.82);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--line);
+}
+.brand{display:flex; align-items:center; gap:13px; min-width:0}
+.spark{
+  width:34px;height:34px;border-radius:9px;flex:none;position:relative;
+  background:linear-gradient(150deg,#1c2f39,#13212a); border:1px solid var(--line);
+  display:grid;place-items:center;
+}
+.spark svg{width:20px;height:20px}
+.brand h1{font-size:15px;font-weight:700;letter-spacing:.2px;margin:0;white-space:nowrap}
+.brand .sub{font-size:11px;color:var(--dimtext);letter-spacing:.6px;text-transform:uppercase;font-weight:600}
+.topbar .grow{flex:1}
+.status{
+  display:flex;align-items:center;gap:9px;font-size:12px;color:var(--muted);
+  padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);
+}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--dimtext);position:relative}
+.dot.live{background:var(--ok)}
+.dot.live::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:1px solid var(--ok);animation:pulse 1.8s ease-out infinite}
+.dot.loading{background:var(--warn)}
+.dot.err{background:var(--bad)}
+@keyframes pulse{0%{transform:scale(.6);opacity:.9}100%{transform:scale(1.9);opacity:0}}
+.btn{
+  font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--text);
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:8px 13px;cursor:pointer;transition:.15s; white-space:nowrap;
+}
+.btn:hover{border-color:#3a5a68;background:var(--panel2)}
+.btn.icon{display:inline-flex;align-items:center;gap:7px}
+.btn.ghost{background:transparent}
+.btn.accent{background:linear-gradient(160deg,#ffbf57,#f59a24);color:#241500;border-color:transparent}
+.btn.accent:hover{filter:brightness(1.06)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* ---------- tabs ---------- */
+.tabs{display:flex;gap:4px;padding:0 22px;background:var(--bg);border-bottom:1px solid var(--line)}
+.tab{
+  appearance:none;background:none;border:none;color:var(--muted);
+  font-family:var(--sans);font-size:13.5px;font-weight:600;cursor:pointer;
+  padding:13px 16px 12px;border-bottom:2px solid transparent;display:flex;gap:9px;align-items:center;
+}
+.tab .ix{font-family:var(--mono);font-size:11px;color:var(--dimtext)}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--text);border-bottom-color:var(--crusher)}
+.tab.active .ix{color:var(--crusher)}
+
+main{padding:22px;max-width:1320px;margin:0 auto}
+.page{display:none}
+.page.active{display:block;animation:fade .25s ease}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ---------- filters ---------- */
+.filterbar{
+  display:grid;grid-template-columns:repeat(6,1fr);gap:12px;
+  padding:16px;background:var(--panel);border:1px solid var(--line);border-radius:13px;margin-bottom:18px;
+}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field label{font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--dimtext)}
+.field .hint{font-size:10.5px;color:var(--dimtext);text-transform:none;letter-spacing:0;font-weight:500}
+select,input[type=number],input[type=text]{
+  font-family:var(--sans);font-size:13.5px;color:var(--text);
+  background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:9px 10px;width:100%;
+  transition:.15s; appearance:none;
+}
+select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%2390a6b1' stroke-width='1.4' fill='none' stroke-linecap='round'/></svg>");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+select:focus,input:focus{outline:none;border-color:var(--crusher);box-shadow:0 0 0 3px rgba(255,182,72,.12)}
+select:disabled{opacity:.4}
+
+/* ---------- KPI ---------- */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+.kpi{position:relative;overflow:hidden;background:linear-gradient(160deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:13px;padding:16px 17px}
+.kpi .cap{font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--dimtext)}
+.kpi .val{font-family:var(--mono);font-weight:700;font-size:26px;margin-top:9px;letter-spacing:-.5px;line-height:1.05}
+.kpi .unit{font-size:12px;color:var(--muted);font-weight:600}
+.kpi .meta{font-size:12px;color:var(--muted);margin-top:5px}
+.kpi .accentbar{position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--crusher)}
+.kpi.k1 .accentbar{background:var(--crusher)}
+.kpi.k2 .accentbar{background:var(--conveyor)}
+.kpi.k3 .accentbar{background:var(--spd)}
+.kpi.k4 .accentbar{background:var(--bwe)}
+
+/* ---------- panels / grid ---------- */
+.grid2{display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-bottom:16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:16px}
+.panel h2{margin:0 0 2px;font-size:14px;font-weight:700}
+.panel .desc{font-size:12px;color:var(--dimtext);margin-bottom:14px}
+.chartwrap{position:relative;height:300px}
+.donutwrap{position:relative;height:230px}
+
+/* ---------- breakdown table ---------- */
+table{width:100%;border-collapse:collapse}
+.tbl th{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--dimtext);text-align:right;font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+.tbl th:first-child{text-align:left}
+.tbl td{padding:9px 10px;border-bottom:1px solid var(--line-soft);font-size:13px}
+.tbl td:not(:first-child){text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.tbl tr:hover td{background:rgba(255,255,255,.018)}
+.tbl tr.clickable{cursor:pointer}
+.swatch{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:9px;vertical-align:middle}
+.share{display:inline-flex;align-items:center;gap:8px;justify-content:flex-end}
+.bar{height:6px;border-radius:3px;background:var(--line);width:70px;overflow:hidden}
+.bar>span{display:block;height:100%;border-radius:3px}
+.muted{color:var(--muted)}
+.chip{display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;border:1px solid var(--line);color:var(--muted);background:var(--bg2)}
+.crumb{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--muted);margin-bottom:14px;flex-wrap:wrap}
+.crumb b{color:var(--text)}
+.crumb .sep{color:var(--dimtext)}
+
+/* ---------- data entry ---------- */
+.entrygrid{display:grid;grid-template-columns:1.05fr .95fr;gap:16px}
+.row3{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row-period{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.formgroup{margin-bottom:14px}
+.pending{margin-top:6px}
+.pending .item{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--bg2);margin-bottom:8px}
+.pending .item .t{flex:1;min-width:0;font-size:13px}
+.pending .item .t small{display:block;color:var(--dimtext);font-size:11px;margin-top:2px}
+.pending .item .v{font-family:var(--mono);font-weight:600}
+.pending .item button{background:none;border:none;color:var(--bad);cursor:pointer;font-size:16px;line-height:1;padding:4px}
+.empty{padding:26px;text-align:center;color:var(--dimtext);border:1px dashed var(--line);border-radius:11px;font-size:13px}
+.notice{font-size:12.5px;color:var(--muted);background:var(--bg2);border:1px solid var(--line);border-left:3px solid var(--conveyor);border-radius:9px;padding:11px 13px;margin-top:6px}
+.toast{position:fixed;right:22px;bottom:22px;z-index:90;display:flex;flex-direction:column;gap:9px}
+.toast .t{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--ok);border-radius:10px;padding:12px 15px;font-size:13px;min-width:240px;box-shadow:0 12px 30px rgba(0,0,0,.4);animation:fade .2s ease}
+.toast .t.err{border-left-color:var(--bad)}
+details{margin-top:14px;border:1px solid var(--line);border-radius:10px;background:var(--bg2)}
+summary{cursor:pointer;padding:12px 14px;font-weight:600;font-size:13px;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸ ";color:var(--crusher)}
+details[open] summary::before{content:"▾ "}
+pre{margin:0;padding:14px;overflow:auto;font-family:var(--mono);font-size:11.5px;color:#cfe3ea;background:#0a1216;border-top:1px solid var(--line);max-height:340px;border-radius:0 0 10px 10px}
+.codehead{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-top:1px solid var(--line)}
+
+/* ---------- settings drawer ---------- */
+.drawer-back{position:fixed;inset:0;background:rgba(4,8,10,.6);z-index:60;display:none}
+.drawer-back.open{display:block}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:380px;max-width:92vw;background:var(--bg2);border-left:1px solid var(--line);z-index:70;transform:translateX(100%);transition:.25s;padding:20px;overflow:auto}
+.drawer.open{transform:none}
+.drawer h3{margin:0 0 4px;font-size:15px}
+.drawer p.d{color:var(--dimtext);font-size:12px;margin:0 0 16px}
+
+/* ---------- export toolbar ---------- */
+.toolbar-row{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.toolbar-row .crumb{margin:0;flex:1}
+.exportbtns{display:flex;gap:8px}
+.exportbtns .btn{padding:7px 12px;font-size:12.5px}
+
+/* ---------- trend-by-machine cards ---------- */
+.trendcards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.tcard{background:var(--bg2);border:1px solid var(--line);border-radius:11px;padding:14px}
+.tcard .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.tcard .name{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
+.tcard .val{font-family:var(--mono);font-size:20px;font-weight:700;margin-top:8px}
+.tcard .sub{font-size:11.5px;color:var(--dimtext);margin-top:2px}
+.tcard .delta{font-family:var(--mono);font-size:12px;font-weight:600;padding:2px 7px;border-radius:20px}
+.tcard .delta.up{color:#ff9d8a;background:rgba(255,107,107,.12)}
+.tcard .delta.down{color:#7ee0a6;background:rgba(95,208,138,.12)}
+.tcard .delta.flat{color:var(--muted);background:var(--panel)}
+.tcard .spark{margin-top:10px}
+
+/* ---------- compare page ---------- */
+.cmp-modes{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.cmp-mode{flex:1;min-width:150px;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:12px 14px;cursor:pointer;transition:.15s}
+.cmp-mode:hover{border-color:#3a5a68}
+.cmp-mode.active{border-color:var(--crusher);background:var(--panel2);box-shadow:0 0 0 3px rgba(255,182,72,.1)}
+.cmp-mode .t{font-weight:700;font-size:13.5px}
+.cmp-mode .d{font-size:11.5px;color:var(--dimtext);margin-top:3px}
+.cmp-grid{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start}
+.picker{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:15px}
+.picker h3{margin:0 0 4px;font-size:13px}
+.picker .d{font-size:11.5px;color:var(--dimtext);margin-bottom:12px}
+.checklist{max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:9px;background:var(--bg2);padding:6px}
+.ck{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:7px;font-size:13px}
+.ck:hover{background:rgba(255,255,255,.03)}
+.ck input{width:15px;height:15px;accent-color:var(--crusher);cursor:pointer;flex:none}
+.ck .exp{width:14px;text-align:center;color:var(--dimtext);cursor:pointer;user-select:none;flex:none}
+.ck .lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.ck .sw{width:9px;height:9px;border-radius:2px;flex:none}
+.quickrow{display:flex;gap:7px;margin-bottom:10px;flex-wrap:wrap}
+.quickrow .btn{padding:5px 10px;font-size:11.5px}
+.cmp-main{display:flex;flex-direction:column;gap:16px;min-width:0}
+.cmp-filters{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+
+/* ---------- print / PDF ---------- */
+@media print{
+  @page{margin:14mm}
+  body{background:#fff !important;color:#10171c !important}
+  .topbar,.tabs,.exportbtns,.drawer,.drawer-back,.toast,.cmp-modes,.quickrow{display:none !important}
+  .page:not(.active){display:none !important}
+  main{max-width:none;padding:0}
+  .panel,.kpi,.tcard,.picker,.checklist{background:#fff !important;border-color:#cfd8dd !important;color:#10171c !important;box-shadow:none !important}
+  .kpi .val,.tcard .val,.num,.tbl td,.crumb b,.panel h2{color:#10171c !important}
+  .muted,.desc,.kpi .meta,.tcard .sub,.crumb,.kpi .cap,.tcard .name,.tbl th{color:#43525a !important}
+  .tbl td,.tbl th{border-color:#dde3e7 !important}
+  .cmp-grid{grid-template-columns:1fr}
+}
+
+@media (max-width:1000px){
+  .filterbar{grid-template-columns:repeat(3,1fr)}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+  .entrygrid{grid-template-columns:1fr}
+}
+@media (max-width:560px){
+  .filterbar{grid-template-columns:repeat(2,1fr)}
+  .kpis{grid-template-columns:1fr}
+  .brand h1{font-size:13px}
+  main{padding:16px}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="spark">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13l0-8z" fill="#ffb648" stroke="#ffb648" stroke-width="1.2" stroke-linejoin="round"/></svg>
+    </div>
+    <div>
+      <h1>Dashboard ค่าไฟฟ้า — แผนกสายพาน</h1>
+      <div class="sub">Conveyor Dept · Energy Monitoring</div>
+    </div>
+  </div>
+  <div class="grow"></div>
+  <div class="status" id="status"><span class="dot loading" id="statusDot"></span><span id="statusText">กำลังเชื่อมต่อ…</span></div>
+  <button class="btn icon ghost" id="refreshBtn" title="โหลดข้อมูลใหม่">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    รีเฟรช
+  </button>
+  <button class="btn icon ghost" id="settingsBtn" title="ตั้งค่า">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 13a7.9 7.9 0 0 0 0-2l1.6-1.2-1.6-2.8-1.9.6a8 8 0 0 0-1.7-1L15.5 4h-3l-.3 1.6a8 8 0 0 0-1.7 1l-1.9-.6L7 8.8 8.6 10a7.9 7.9 0 0 0 0 2L7 13.2 8.6 16l1.9-.6a8 8 0 0 0 1.7 1l.3 1.6h3l.3-1.6a8 8 0 0 0 1.7-1l1.9.6 1.6-2.8L19.4 13z" stroke="currentColor" stroke-width="1.3"/></svg>
+  </button>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-page="summary"><span class="ix">01</span> สรุปการใช้ไฟฟ้า</button>
+  <button class="tab" data-page="compare"><span class="ix">02</span> เปรียบเทียบ</button>
+  <button class="tab" data-page="entry"><span class="ix">03</span> บันทึกค่าไฟฟ้า</button>
+</div>
+
+<main>
+  <!-- ============ PAGE 1 : SUMMARY ============ -->
+  <section class="page active" id="page-summary">
+    <div class="filterbar">
+      <div class="field">
+        <label>เครื่องจักร</label>
+        <select id="fType"></select>
+      </div>
+      <div class="field">
+        <label>Line สายพาน <span class="hint" id="lineHint"></span></label>
+        <select id="fLine"><option value="all">ทุก Line</option></select>
+      </div>
+      <div class="field">
+        <label>Drive station / จุด</label>
+        <select id="fStation"><option value="all">ทุกจุด</option></select>
+      </div>
+      <div class="field">
+        <label>ปี</label>
+        <select id="fYear"><option value="all">ทุกปี</option></select>
+      </div>
+      <div class="field">
+        <label>เดือน</label>
+        <select id="fMonth"><option value="all">ทั้งปี</option></select>
+      </div>
+      <div class="field">
+        <label>อัตราค่าไฟ <span class="hint">฿ / kWh</span></label>
+        <input type="number" id="fTariff" step="0.01" min="0" value="4.20" />
+      </div>
+    </div>
+
+    <div class="toolbar-row">
+      <div class="crumb" id="crumb"></div>
+      <div class="exportbtns">
+        <button class="btn icon" id="sumExcel" title="ดาวน์โหลดเป็น Excel">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 4h16v16H4zM9 9l6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          Excel
+        </button>
+        <button class="btn icon" id="sumPdf" title="บันทึก/พิมพ์เป็น PDF">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M7 3h7l4 4v14H7zM14 3v4h4M9 13h6M9 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          PDF
+        </button>
+      </div>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="grid2">
+      <div class="panel">
+        <h2 id="chartTitle">แนวโน้มการใช้พลังงาน</h2>
+        <div class="desc" id="chartDesc">หน่วยเป็น kWh</div>
+        <div class="chartwrap"><canvas id="trendChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <h2>สัดส่วนการใช้พลังงาน</h2>
+        <div class="desc" id="donutDesc">แยกตามกลุ่ม</div>
+        <div class="donutwrap"><canvas id="donutChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2 id="breakTitle">รายละเอียดการใช้พลังงาน</h2>
+      <div class="desc">คลิกแถวเพื่อเจาะลึกลงไปอีกระดับ · Crusher มีชื่อจุดซ้ำกัน ระบบแยกตาม Line ให้แล้ว</div>
+      <table class="tbl" id="breakTable">
+        <thead><tr><th>รายการ</th><th>kWh</th><th>ค่าไฟ (฿)</th><th>สัดส่วน</th></tr></thead>
+        <tbody id="breakBody"></tbody>
+      </table>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <h2>แนวโน้มรายเครื่องจักร</h2>
+      <div class="desc" id="trendSumDesc">เทียบเดือนล่าสุดกับเดือนก่อนหน้า · เส้นกราฟย่อแสดง 12 เดือนล่าสุด</div>
+      <div class="trendcards" id="trendCards"></div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE 2 : COMPARE ============ -->
+  <section class="page" id="page-compare">
+    <div class="cmp-modes" id="cmpModes">
+      <div class="cmp-mode active" data-mode="year"><div class="t">เทียบปีต่อปี</div><div class="d">เลือกหลายปี · ดูเส้นรายเดือนซ้อนกัน</div></div>
+      <div class="cmp-mode" data-mode="month"><div class="t">เทียบเดือนต่อเดือน</div><div class="d">เลือกหลายเดือนในปีที่กำหนด</div></div>
+      <div class="cmp-mode" data-mode="machine"><div class="t">เทียบเครื่องจักร</div><div class="d">ติ๊กเครื่องจักร/Line/จุด ได้อิสระ</div></div>
+    </div>
+
+    <div class="cmp-grid">
+      <div class="picker">
+        <h3 id="pickerTitle">เลือกรายการ</h3>
+        <div class="d" id="pickerDesc"></div>
+        <div class="quickrow" id="pickerQuick"></div>
+        <div class="checklist" id="pickerList"></div>
+      </div>
+
+      <div class="cmp-main">
+        <div class="panel">
+          <div class="cmp-filters" id="cmpFilters"></div>
+        </div>
+
+        <div class="toolbar-row" style="margin:0">
+          <div class="crumb" id="cmpCrumb" style="flex:1"></div>
+          <div class="exportbtns">
+            <button class="btn icon" id="cmpExcel" title="ดาวน์โหลดเป็น Excel">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 4h16v16H4zM9 9l6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              Excel
+            </button>
+            <button class="btn icon" id="cmpPdf" title="บันทึก/พิมพ์เป็น PDF">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M7 3h7l4 4v14H7zM14 3v4h4M9 13h6M9 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              PDF
+            </button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2 id="cmpChartTitle">กราฟเปรียบเทียบ</h2>
+          <div class="desc" id="cmpChartDesc">หน่วยเป็น kWh</div>
+          <div class="chartwrap" style="height:340px"><canvas id="compareChart"></canvas></div>
+        </div>
+
+        <div class="panel">
+          <h2>ตารางเปรียบเทียบ</h2>
+          <div class="desc" id="cmpTableDesc"></div>
+          <table class="tbl" id="cmpTable">
+            <thead id="cmpHead"></thead>
+            <tbody id="cmpBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE 3 : DATA ENTRY ============ -->
+  <section class="page" id="page-entry">
+    <div class="entrygrid">
+      <div class="panel">
+        <h2>บันทึกค่าพลังงาน</h2>
+        <div class="desc">เลือกงวด เครื่องจักร และจุดที่ต้องการ แล้วกรอกค่า kWh</div>
+
+        <div class="formgroup">
+          <label class="field" style="margin-bottom:6px;display:block">
+            <span style="font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--dimtext)">งวด</span>
+          </label>
+          <div class="row-period">
+            <select id="eYear"></select>
+            <select id="eMonth"></select>
+          </div>
+        </div>
+
+        <div class="formgroup">
+          <div class="field"><label>เครื่องจักร</label><select id="eType"></select></div>
+        </div>
+        <div class="formgroup row3">
+          <div class="field"><label>Line สายพาน</label><select id="eLine"></select></div>
+          <div class="field"><label>Drive station / จุด</label><select id="eStation"></select></div>
+        </div>
+        <div class="formgroup">
+          <div class="field"><label>ค่าพลังงาน (kWh)</label><input type="number" id="eValue" min="0" step="any" placeholder="เช่น 152340" /></div>
+        </div>
+
+        <button class="btn accent icon" id="addEntryBtn" style="width:100%;justify-content:center">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          เพิ่มเข้ารายการ
+        </button>
+
+        <div class="notice" id="targetPreview"></div>
+      </div>
+
+      <div class="panel">
+        <h2>รายการที่จะบันทึก</h2>
+        <div class="desc">ตรวจสอบให้ครบแล้วกดส่งไปยัง Google Sheet</div>
+        <div class="pending" id="pendingList"></div>
+
+        <div class="formgroup" style="margin-top:16px">
+          <div class="field">
+            <label>Apps Script URL <span class="hint">สำหรับเขียนกลับเข้า Sheet</span><span id="urlSaved" class="hint" style="color:var(--ok);display:none"> · จำไว้แล้ว <a href="#" id="urlClear" style="color:var(--muted)">ล้าง</a></span></label>
+            <input type="text" id="appsUrl" placeholder="https://script.google.com/macros/s/…/exec" />
+          </div>
+        </div>
+        <label class="checkrow" style="display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted);margin:2px 0 12px;cursor:pointer">
+          <input type="checkbox" id="createMissing" checked style="width:16px;height:16px;accent-color:var(--crusher);cursor:pointer" />
+          สร้างแถวเดือนใหม่อัตโนมัติถ้ายังไม่มีในชีต (เติมต่อจากเดือนล่าสุด)
+        </label>
+        <button class="btn accent icon" id="submitBtn" style="width:100%;justify-content:center" disabled>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 12l5 5L20 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          ส่งข้อมูลเข้า Google Sheet
+        </button>
+
+        <details>
+          <summary>วิธีเชื่อมต่อให้เขียนกลับเข้า Sheet ได้ (Apps Script)</summary>
+          <div class="codehead">
+            <span class="muted" style="font-size:12px">วางโค้ดนี้ใน Extensions → Apps Script แล้ว Deploy เป็น Web app</span>
+            <button class="btn" id="copyCode" style="padding:5px 10px;font-size:11.5px">คัดลอก</button>
+          </div>
+          <pre id="gsCode"></pre>
+        </details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- settings drawer -->
+<div class="drawer-back" id="drawerBack"></div>
+<div class="drawer" id="drawer">
+  <h3>ตั้งค่าการเชื่อมต่อ</h3>
+  <p class="d">ค่าเหล่านี้ใช้ในรอบการทำงานปัจจุบัน หากต้องการให้ค่าเริ่มต้นถาวร ให้แก้บล็อก CONFIG ในไฟล์ HTML</p>
+  <div class="formgroup"><div class="field"><label>Google Sheet ID</label><input type="text" id="sSheetId" /></div></div>
+  <div class="formgroup"><div class="field"><label>GID (แท็บ)</label><input type="text" id="sGid" /></div></div>
+  <div class="formgroup"><div class="field"><label>รอบรีเฟรชอัตโนมัติ (วินาที)</label><input type="number" id="sPoll" min="0" /></div></div>
+  <button class="btn accent" id="saveSettings" style="width:100%;justify-content:center">บันทึกและโหลดใหม่</button>
+  <p class="d" style="margin-top:14px">Sheet ต้องตั้งการแชร์เป็น <b>"ทุกคนที่มีลิงก์ · ผู้อ่าน"</b> Dashboard จึงจะอ่านข้อมูลได้</p>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="text/plain" id="gsCodeSrc">var TH_ABBR=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+
+function doGet(){ return ContentService.createTextOutput('OK'); }
+
+function doPost(e){
+  try{
+    var body = JSON.parse(e.postData.contents);
+    var ss = body.sheetId ? SpreadsheetApp.openById(body.sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+    var sh = (body.gid!==undefined && body.gid!==null && body.gid!=='') ? getSheetByGid(ss, body.gid) : ss.getSheets()[0];
+    var entries = body.entries || [];
+    var createIfMissing = body.createIfMissing !== false;   // ค่าเริ่มต้น = true
+    var results = [];
+    entries.forEach(function(en){
+      var loc = findRow(sh, en.periodLabel), created = false;
+      if (loc < 0 && createIfMissing && en.meta && en.meta.year && en.meta.month){
+        loc = createMonthsUpTo(sh, Number(en.meta.year), Number(en.meta.month));
+        created = loc > 0;
+      }
+      if (loc < 0){ results.push({ok:false, periodLabel:en.periodLabel, error:'ไม่พบแถวงวดนี้ และสร้างไม่ได้', last:lastLabel(sh)}); return; }
+      sh.getRange(loc, Number(en.colIndex)+1).setValue(en.value);
+      results.push({ok:true, periodLabel:en.periodLabel, row:loc, col:Number(en.colIndex)+1, created:created});
+    });
+    return json({ok:true, results:results});
+  }catch(err){ return json({ok:false, error:String(err)}); }
+}
+
+function normLabel(s){ return String(s==null?'':s).replace(/[\s\u00a0\u200b]/g,''); }
+function isDate(v){ return Object.prototype.toString.call(v)==='[object Date]'; }
+function dateToLabel(d){ var yy=('0'+(d.getFullYear()%100)).slice(-2); return TH_ABBR[d.getMonth()]+'-'+yy; }
+
+// หาแถวของงวด: รองรับทั้งคอลัมน์ที่เป็นข้อความ และที่เป็นค่าวันที่
+function findRow(sh, periodLabel){
+  var n=sh.getLastRow(); if(n<1) return -1;
+  var disp=sh.getRange(1,1,n,1).getDisplayValues();
+  var raw=sh.getRange(1,1,n,1).getValues();
+  var target=normLabel(periodLabel);
+  for(var i=0;i<n;i++){
+    if(normLabel(disp[i][0])===target) return i+1;
+    if(isDate(raw[i][0]) && normLabel(dateToLabel(raw[i][0]))===target) return i+1;
+  }
+  return -1;
+}
+
+// ข้อมูลแถวเดือนล่าสุด
+function lastMonthRow(sh){
+  var n=sh.getLastRow();
+  var disp=sh.getRange(1,1,n,1).getDisplayValues();
+  var raw=sh.getRange(1,1,n,1).getValues();
+  var info=null;
+  for(var i=0;i<n;i++){
+    var rv=raw[i][0], y=null, m=null, dt=isDate(rv);
+    if(dt){ y=rv.getFullYear(); m=rv.getMonth()+1; }
+    else{
+      var mt=String(disp[i][0]).trim().match(/^(.+?)-(\d{2})$/);
+      if(mt){ var idx=TH_ABBR.indexOf(mt[1].trim()); if(idx>=0){ m=idx+1; y=2000+parseInt(mt[2],10); } }
+    }
+    if(y){ info={row:i+1, year:y, month:m, isDate:dt}; }
+  }
+  return info;
+}
+
+// สร้างแถวเดือนใหม่ต่อจากเดือนล่าสุด จนถึงเดือนเป้าหมาย (คัดลอกสูตร/รูปแบบ)
+function createMonthsUpTo(sh, year, month){
+  var info=lastMonthRow(sh); if(!info) return -1;
+  var lastIdx=info.year*12+(info.month-1), tgtIdx=year*12+(month-1);
+  if(tgtIdx<=lastIdx) return -1;                 // เป้าหมายอยู่ก่อนเดือนล่าสุด -> ไม่เติมย้อนหลัง
+  var curRow=info.row, lastCol=sh.getLastColumn(), y=info.year, m=info.month, targetRow=-1, guard=0;
+  while(guard++ < 120){
+    m++; if(m>12){ m=1; y++; }
+    sh.insertRowsAfter(curRow,1);
+    var src=sh.getRange(curRow,1,1,lastCol), dst=sh.getRange(curRow+1,1,1,lastCol);
+    src.copyTo(dst);                              // คัดลอกค่า+สูตร+รูปแบบ
+    var formulas=src.getFormulas()[0];
+    for(var c=1;c<lastCol;c++){ if(!formulas[c]) sh.getRange(curRow+1,c+1).clearContent(); }  // ล้างค่าที่ไม่ใช่สูตร เว้นคอลัมน์งวด
+    if(info.isDate) sh.getRange(curRow+1,1).setValue(new Date(y,m-1,1));
+    else sh.getRange(curRow+1,1).setValue(TH_ABBR[m-1]+'-'+('0'+(y%100)).slice(-2));
+    curRow++;
+    if(y===year && m===month){ targetRow=curRow; break; }
+  }
+  return targetRow;
+}
+
+function lastLabel(sh){ var i=lastMonthRow(sh); return i?(TH_ABBR[i.month-1]+'-'+('0'+(i.year%100)).slice(-2)):''; }
+function getSheetByGid(ss,gid){ var s=ss.getSheets(); for(var i=0;i<s.length;i++){ if(String(s[i].getSheetId())===String(gid)) return s[i]; } return ss.getSheets()[0]; }
+function json(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }</script>
+
+
+<script>
+/* ============================================================
+   CONFIG — แก้ค่าเริ่มต้นได้ที่นี่
+   ============================================================ */
+const CONFIG = {
+  SHEET_ID: '1gOWDC22T7LVsYRfm_0ftGfVDFRJE2gSfeNV5mvXBDp8',
+  GID: '0',
+  POLL_SECONDS: 60,      // 0 = ปิดการรีเฟรชอัตโนมัติ
+  TARIFF: 4.20,          // ฿ ต่อ kWh (ตั้งต้น)
+  APPS_SCRIPT_URL: ''    // วาง Web app URL เพื่อให้หน้า "บันทึก" ส่งข้อมูลได้ทันที
+};
+
+/* ---------- ค่าคงที่ภาษาไทย ---------- */
+const TH_ABBR = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const TH_FULL = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+const ABBR2MONTH = {}; TH_ABBR.forEach((a,i)=>ABBR2MONTH[a]=i+1);
+
+const CAT_LABEL = { BWE:'BWE', CRUSHER:'Crusher', CONVEYOR:'Conveyor (Drive station)', SPD:'SPD' };
+const CAT_COLOR = { BWE:'var(--bwe)', CRUSHER:'var(--crusher)', CONVEYOR:'var(--conveyor)', SPD:'var(--spd)' };
+const CAT_HEX   = { BWE:'#ff8d5c', CRUSHER:'#ffb648', CONVEYOR:'#34d3cf', SPD:'#9d8cff' };
+const LINE_HEX  = { A:'#ffb648', B:'#34d3cf', N:'#9d8cff' };
+const PALETTE   = ['#ffb648','#34d3cf','#9d8cff','#ff8d5c','#5fd08a','#f06595','#74c0fc','#ffd43b','#b197fc','#63e6be','#ffa94d','#a9e34b'];
+
+/* ---------- runtime config ---------- */
+const RC = { ...CONFIG };
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let SCHEMA = null;          // { cols:[{cat,line,station,role}], byCat, lines, grandCol, ... }
+let DATA = null;            // { annual:{year:vals[]}, monthly:[{year,month,label,vals}], years:[], width }
+let pollTimer = null;
+const sel = { type:'ALL', line:'all', station:'all', year:'all', month:'all' };
+let pending = [];
+let trendChart=null, donutChart=null;
+
+/* ============================================================
+   DOM helpers
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const fmt = n => (n==null||isNaN(n)) ? '–' : Math.round(n).toLocaleString('en-US');
+const fmtBaht = n => (n==null||isNaN(n)) ? '–' : Math.round(n).toLocaleString('en-US');
+function toast(msg, err){
+  const el=document.createElement('div'); el.className='t'+(err?' err':''); el.textContent=msg;
+  $('toast').appendChild(el); setTimeout(()=>{el.style.opacity='0';el.style.transition='.4s';setTimeout(()=>el.remove(),400)},3600);
+}
+function setStatus(kind,text){
+  const d=$('statusDot'); d.className='dot '+kind; $('statusText').textContent=text;
+}
+
+/* ============================================================
+   JSONP fetch ของ gviz
+   ============================================================ */
+function gvizFetch(range){
+  return new Promise((resolve,reject)=>{
+    const cb='__gviz_'+Math.random().toString(36).slice(2);
+    const url=`https://docs.google.com/spreadsheets/d/${RC.SHEET_ID}/gviz/tq`+
+              `?gid=${RC.GID}&headers=0&range=${encodeURIComponent(range)}`+
+              `&tqx=out:json;responseHandler:${cb}`;
+    const s=document.createElement('script');
+    let done=false;
+    const cleanup=()=>{ delete window[cb]; s.remove(); };
+    window[cb]=(resp)=>{ done=true; try{ resolve(resp); } finally { cleanup(); } };
+    s.onerror=()=>{ if(!done){ cleanup(); reject(new Error('โหลดไม่สำเร็จ — ตรวจสอบการแชร์/Sheet ID')); } };
+    s.src=url; document.head.appendChild(s);
+    setTimeout(()=>{ if(!done){ cleanup(); reject(new Error('หมดเวลาเชื่อมต่อ')); } },15000);
+  });
+}
+function cellText(c){ if(!c) return ''; if(c.f!=null) return String(c.f); if(c.v!=null) return String(c.v); return ''; }
+function cellNum(c){
+  if(!c) return null;
+  if(typeof c.v==='number') return c.v;
+  let s = c.f!=null?String(c.f):(c.v!=null?String(c.v):'');
+  s=s.replace(/,/g,'').trim();
+  if(s===''||s==='-') return null;
+  const n=parseFloat(s); return isFinite(n)?n:null;
+}
+function gridFromRows(resp){
+  const rows=(resp.table&&resp.table.rows)||[];
+  let w=0; rows.forEach(r=>{ if(r.c) w=Math.max(w,r.c.length); });
+  return { rows, width:w };
+}
+
+/* ============================================================
+   สร้าง SCHEMA จากแถวหัวตาราง (sheet row 3-4 = ช่วง A3:CZ4)
+   ============================================================ */
+function classify(group, label){
+  const G=(group||'').trim(), L=(label||'').trim();
+  const Gu=G.toUpperCase(), Lu=L.toUpperCase();
+  if(Gu==='TOTAL CV'||Lu==='TOTAL CV') return {cat:'TOTAL',role:'grand'};
+  if(Lu==='TOTAL BWE') return {cat:'BWE',role:'catTotal'};
+  if(/^BWE/.test(Lu)||/^BW#/.test(Lu)) return {cat:'BWE',role:'leaf',line:null,station:L};
+  if(Lu==='TOTAL SPD') return {cat:'SPD',role:'catTotal'};
+  if(/^SPD\s*[ABN]$/.test(Gu) && L==='') { const ln=Gu.replace('SPD','').trim(); return {cat:'SPD',role:'leaf',line:ln,station:G}; }
+  if(Gu.includes('CRUSHER')){
+    const m=Gu.match(/([ABN])\s*$/); const line=m?m[1]:null;
+    if(Lu.startsWith('TOTAL')) return {cat:'CRUSHER',role:'lineTotal',line};
+    if(L!=='') return {cat:'CRUSHER',role:'leaf',line,station:L};
+    return {role:'skip'};
+  }
+  if(Gu.includes('CONVEYOR')){
+    const m=Gu.match(/LINE\s*([ABN])/); const line=m?m[1]:null;
+    if(Lu.startsWith('TOTAL')) return {cat:'CONVEYOR',role:'lineTotal',line};
+    if(L!=='') return {cat:'CONVEYOR',role:'leaf',line,station:L};
+    return {role:'skip'};
+  }
+  return {role:'skip'};
+}
+
+function buildSchema(resp){
+  const {rows,width}=gridFromRows(resp);
+  if(rows.length<2) throw new Error('อ่านหัวตารางไม่ได้');
+  const groupRow=rows[0].c||[], labelRow=rows[1].c||[];
+  // forward-fill group
+  const groups=[]; let last='';
+  for(let c=0;c<width;c++){ const g=cellText(groupRow[c]).trim(); if(g) last=g; groups[c]=last; }
+  // BWE has no group header — clear any carry before the first real group so BWE relies on labels
+  // (handled naturally since nothing precedes BWE)
+
+  const cols=new Array(width).fill(null);
+  const byCat={ BWE:{leaves:[],total:null}, SPD:{leaves:[],total:null,lines:{A:null,B:null,N:null}},
+                CRUSHER:{lines:{A:{leaves:[],total:null},B:{leaves:[],total:null},N:{leaves:[],total:null}}},
+                CONVEYOR:{lines:{A:{leaves:[],total:null},B:{leaves:[],total:null},N:{leaves:[],total:null}}} };
+  let grandCol=null;
+
+  for(let c=0;c<width;c++){
+    const info=classify(groups[c], cellText(labelRow[c]));
+    cols[c]=info;
+    if(info.role==='grand'){ grandCol=c; }
+    else if(info.cat==='BWE'){ if(info.role==='leaf') byCat.BWE.leaves.push({col:c,station:info.station}); if(info.role==='catTotal') byCat.BWE.total=c; }
+    else if(info.cat==='SPD'){
+      if(info.role==='leaf'){ byCat.SPD.leaves.push({col:c,station:info.station,line:info.line}); if(info.line) byCat.SPD.lines[info.line]=c; }
+      if(info.role==='catTotal') byCat.SPD.total=c;
+    }
+    else if(info.cat==='CRUSHER' && info.line){
+      const L=byCat.CRUSHER.lines[info.line]; if(!L) continue;
+      if(info.role==='leaf') L.leaves.push({col:c,station:info.station});
+      if(info.role==='lineTotal') L.total=c;
+    }
+    else if(info.cat==='CONVEYOR' && info.line){
+      const L=byCat.CONVEYOR.lines[info.line]; if(!L) continue;
+      if(info.role==='leaf') L.leaves.push({col:c,station:info.station});
+      if(info.role==='lineTotal') L.total=c;
+    }
+  }
+  return { cols, byCat, grandCol, width };
+}
+
+/* ============================================================
+   อ่านข้อมูล (ช่วง A6:CZ400)
+   ============================================================ */
+function buildData(resp, width){
+  const {rows}=gridFromRows(resp);
+  const annual={}, monthly=[]; const yearsSet=new Set();
+  rows.forEach(r=>{
+    const c=r.c||[]; const label=cellText(c[0]).trim();
+    if(!label) return;
+    const vals=new Array(width).fill(null);
+    for(let i=1;i<width;i++) vals[i]=cellNum(c[i]);
+    if(/^\d{4}$/.test(label)){
+      const y=parseInt(label,10); annual[y]=vals; yearsSet.add(y);
+    } else {
+      const m=label.match(/^(.+?)-(\d{2})$/);
+      if(m && ABBR2MONTH[m[1].trim()]){
+        const month=ABBR2MONTH[m[1].trim()]; const year=2000+parseInt(m[2],10);
+        monthly.push({year,month,label,vals}); yearsSet.add(year);
+      }
+    }
+  });
+  const years=[...yearsSet].sort((a,b)=>a-b);
+  return { annual, monthly, years, width };
+}
+
+/* ============================================================
+   NODE model + การคำนวณค่า
+   ============================================================ */
+function stationsOf(cat,line){
+  if(cat==='BWE') return SCHEMA.byCat.BWE.leaves;
+  if(cat==='SPD') return SCHEMA.byCat.SPD.leaves.filter(l=>line==='all'||l.line===line);
+  if(cat==='CRUSHER'||cat==='CONVEYOR'){ const L=SCHEMA.byCat[cat].lines[line]; return L?L.leaves:[]; }
+  return [];
+}
+function leafColsOfSelection(){
+  const {type,line,station}=sel;
+  if(type==='ALL'){
+    let arr=[];
+    arr=arr.concat(SCHEMA.byCat.BWE.leaves.map(l=>l.col));
+    ['CRUSHER','CONVEYOR'].forEach(cat=>['A','B','N'].forEach(ln=>arr=arr.concat(SCHEMA.byCat[cat].lines[ln].leaves.map(l=>l.col))));
+    arr=arr.concat(SCHEMA.byCat.SPD.leaves.map(l=>l.col));
+    return arr;
+  }
+  if(station!=='all'){ const s=stationsOf(type,line).find(x=>x.station===station); return s?[s.col]:[]; }
+  return stationsOf(type, line==='all'?'all':line).map(l=>l.col);
+}
+
+/* คืนค่า kWh ของ "selection ปัจจุบัน" ที่ row vals ที่กำหนด */
+function rowValueLeaf(vals){ let s=0,any=false; leafColsOfSelection().forEach(c=>{const v=vals[c]; if(v!=null){s+=v;any=true;}}); return any?s:0; }
+
+function preferredTotalCol(){
+  const {type,line,station}=sel;
+  if(station!=='all') return null;
+  if(type==='ALL') return SCHEMA.grandCol;
+  if(type==='BWE') return SCHEMA.byCat.BWE.total;
+  if(type==='SPD') return line==='all'?SCHEMA.byCat.SPD.total:null;
+  if(type==='CRUSHER'||type==='CONVEYOR'){
+    if(line==='all') return null; // ไม่มี total รวมของทั้งหมวด -> รวมจาก 3 line total
+    return SCHEMA.byCat[type].lines[line].total;
+  }
+  return null;
+}
+function lineTotalCols(){ // ใช้เมื่อ type=CRUSHER/CONVEYOR & line=all
+  const {type}=sel; if(type!=='CRUSHER'&&type!=='CONVEYOR') return null;
+  return ['A','B','N'].map(ln=>SCHEMA.byCat[type].lines[ln].total);
+}
+function rowValue(vals){
+  if(!vals) return 0;
+  const tc=preferredTotalCol();
+  if(tc!=null && vals[tc]!=null) return vals[tc];
+  // line=all ของ crusher/conveyor: ใช้ผลรวม line total ถ้ามี ไม่งั้นรวม leaf
+  const lts=lineTotalCols();
+  if(sel.station==='all' && sel.line==='all' && lts){
+    let s=0,any=false; lts.forEach(c=>{ if(c!=null&&vals[c]!=null){s+=vals[c];any=true;} });
+    if(any) return s + rowValueLeafForMissingLines(vals,lts);
+  }
+  return rowValueLeaf(vals);
+}
+function rowValueLeafForMissingLines(vals,lts){ return 0; } // line total ครอบคลุมแล้ว
+
+/* ค่า kWh ของ selection ตามงวด */
+function valueFor(year, month){
+  if(year==='all' && month==='all'){
+    let s=0; DATA.years.forEach(y=>{ if(DATA.annual[y]) s+=rowValue(DATA.annual[y]); }); return s;
+  }
+  if(year==='all'){ let s=0; DATA.monthly.forEach(r=>{ if(r.month===month) s+=rowValue(r.vals); }); return s; }
+  if(month==='all'){
+    if(DATA.annual[year]) return rowValue(DATA.annual[year]);
+    let s=0; DATA.monthly.forEach(r=>{ if(r.year===year) s+=rowValue(r.vals); }); return s;
+  }
+  const r=DATA.monthly.find(x=>x.year===year&&x.month===month); return r?rowValue(r.vals):0;
+}
+
+/* ค่าของ "child node" หนึ่ง ๆ (ใช้ในตาราง/โดนัท) */
+function childValue(child, year, month){
+  const saved={...sel};
+  Object.assign(sel, child);  // {type,line,station}
+  const v=valueFor(year,month);
+  Object.assign(sel, saved);
+  return v;
+}
+
+/* ============================================================
+   UI: dropdowns
+   ============================================================ */
+function fillSelect(el, opts, keepValue){
+  const cur=el.value;
+  el.innerHTML='';
+  opts.forEach(o=>{ const op=document.createElement('option'); op.value=o.v; op.textContent=o.t; el.appendChild(op); });
+  if(keepValue && opts.some(o=>String(o.v)===String(cur))) el.value=cur;
+}
+function typeOptions(){ return [{v:'ALL',t:'ทุกเครื่องจักร'},{v:'BWE',t:'BWE'},{v:'CRUSHER',t:'Crusher'},{v:'CONVEYOR',t:'Conveyor (Drive station)'},{v:'SPD',t:'SPD'}]; }
+function lineOptions(type){
+  if(type==='BWE') return [{v:'all',t:'— ไม่มี Line —'}];
+  return [{v:'all',t:'ทุก Line'},{v:'A',t:'Line A'},{v:'B',t:'Line B'},{v:'N',t:'Line N'}];
+}
+function stationOptions(type,line){
+  const base=[{v:'all',t:'ทุกจุด'}];
+  if(type==='ALL') return [{v:'all',t:'— ทั้งหมด —'}];
+  let st=[];
+  if(type==='BWE') st=stationsOf('BWE','all');
+  else if(type==='SPD') st=stationsOf('SPD',line);
+  else if(line==='all') return [{v:'all',t:'เลือก Line ก่อน'}];
+  else st=stationsOf(type,line);
+  return base.concat(st.map(s=>({v:s.station,t:s.station})));
+}
+
+function refreshSummaryControls(keep){
+  fillSelect($('fType'), typeOptions(), keep);
+  $('fType').value=sel.type;
+  const lo=lineOptions(sel.type); fillSelect($('fLine'), lo, false); $('fLine').value=sel.line;
+  $('fLine').disabled=(sel.type==='BWE'||sel.type==='ALL');
+  $('lineHint').textContent=(sel.type==='CRUSHER')?'(ชื่อจุดซ้ำได้ แยกตาม Line)':'';
+  const so=stationOptions(sel.type, sel.line); fillSelect($('fStation'), so, false); $('fStation').value=sel.station;
+  $('fStation').disabled=(sel.type==='ALL');
+  const yo=[{v:'all',t:'ทุกปี'}].concat(DATA.years.map(y=>({v:y,t:y}))); fillSelect($('fYear'),yo,false); $('fYear').value=sel.year;
+  const mo=[{v:'all',t:'ทั้งปี'}].concat(TH_FULL.map((m,i)=>({v:i+1,t:m}))); fillSelect($('fMonth'),mo,false); $('fMonth').value=sel.month;
+}
+
+/* ============================================================
+   RENDER SUMMARY
+   ============================================================ */
+function periodText(){
+  const y = sel.year==='all'?'ทุกปี':('ปี '+sel.year);
+  const m = sel.month==='all'?'':(' · '+TH_FULL[sel.month-1]);
+  return y+m;
+}
+function selectionText(){
+  if(sel.type==='ALL') return 'ทุกเครื่องจักร';
+  let t=CAT_LABEL[sel.type];
+  if((sel.type==='CRUSHER'||sel.type==='CONVEYOR')&&sel.line!=='all') t+=' · Line '+sel.line;
+  if(sel.type==='SPD'&&sel.line!=='all') t+=' · Line '+sel.line;
+  if(sel.station!=='all') t+=' · '+sel.station;
+  return t;
+}
+
+function renderCrumb(){
+  const c=$('crumb');
+  const parts=[`<b>${selectionText()}</b>`,`<span class="sep">/</span>`,`<span>${periodText()}</span>`];
+  c.innerHTML=parts.join(' ');
+}
+
+function renderKPIs(){
+  const tariff=parseFloat($('fTariff').value)||0;
+  const total=valueFor(sel.year, sel.month);
+  // grand total ของทั้งแผนกในงวดเดียวกัน
+  const saved={...sel}; sel.type='ALL';sel.line='all';sel.station='all';
+  const plant=valueFor(saved.year, saved.month);
+  Object.assign(sel,saved);
+  const share=plant>0?(total/plant*100):0;
+
+  // peak + average
+  let peakLabel='–', peakVal=0, avg=0, avgCap='เฉลี่ย/เดือน';
+  if(sel.year==='all' && sel.month==='all'){
+    let cnt=0,sum=0; DATA.years.forEach(y=>{ const v=childValue(curChild(),y,'all'); if(v>0){sum+=v;cnt++; if(v>peakVal){peakVal=v;peakLabel='ปี '+y;}} });
+    avg=cnt?sum/cnt:0; avgCap='เฉลี่ย/ปี';
+  } else if(sel.year!=='all'){
+    let cnt=0,sum=0; for(let m=1;m<=12;m++){ const v=valueForMonth(sel.year,m); if(v>0){sum+=v;cnt++; if(v>peakVal){peakVal=v;peakLabel=TH_FULL[m-1];}} }
+    avg=cnt?sum/cnt:0; avgCap='เฉลี่ย/เดือน';
+  } else { // ทุกปี เดือนเจาะจง
+    let cnt=0,sum=0; DATA.years.forEach(y=>{ const v=valueForMonth(y,sel.month); if(v>0){sum+=v;cnt++; if(v>peakVal){peakVal=v;peakLabel=y+'';}} });
+    avg=cnt?sum/cnt:0; avgCap='เฉลี่ย/ปี';
+  }
+
+  const cards=[
+    {cls:'k1',cap:'พลังงานรวม',val:fmt(total),unit:'kWh',meta:periodText()},
+    {cls:'k2',cap:'ค่าไฟโดยประมาณ',val:'฿'+fmtBaht(total*tariff),unit:'',meta:`@ ${tariff.toFixed(2)} ฿/kWh`},
+    {cls:'k3',cap:'จุดสูงสุด',val:fmt(peakVal),unit:'kWh',meta:peakLabel},
+    {cls:'k4',cap:avgCap,val:fmt(avg),unit:'kWh',meta:`สัดส่วน ${share.toFixed(1)}% ของทั้งแผนก`}
+  ];
+  $('kpis').innerHTML=cards.map(c=>`
+    <div class="kpi ${c.cls}"><div class="accentbar"></div>
+      <div class="cap">${c.cap}</div>
+      <div class="val">${c.val} <span class="unit">${c.unit}</span></div>
+      <div class="meta">${c.meta}</div>
+    </div>`).join('');
+}
+function curChild(){ return {type:sel.type,line:sel.line,station:sel.station}; }
+function valueForMonth(year,month){ const r=DATA.monthly.find(x=>x.year===year&&x.month===month); return r?rowValue(r.vals):0; }
+
+/* ----- children list สำหรับตาราง/โดนัท ----- */
+function buildChildren(){
+  const {type,line,station}=sel;
+  if(station!=='all') return [{label:station, child:{type,line,station}, color:LINE_HEX[line]||'#ffb648'}];
+  if(type==='ALL') return ['BWE','CRUSHER','CONVEYOR','SPD'].map(cat=>({label:CAT_LABEL[cat], child:{type:cat,line:'all',station:'all'}, color:CAT_HEX[cat]}));
+  if(type==='BWE') return SCHEMA.byCat.BWE.leaves.map((l,i)=>({label:l.station, child:{type:'BWE',line:'all',station:l.station}, color:PALETTE[i%PALETTE.length]}));
+  if(type==='SPD'){
+    if(line==='all') return ['A','B','N'].filter(ln=>SCHEMA.byCat.SPD.lines[ln]!=null).map(ln=>({label:'SPD '+ln, child:{type:'SPD',line:ln,station:'SPD '+ln}, color:LINE_HEX[ln]}));
+    return stationsOf('SPD',line).map(s=>({label:s.station, child:{type:'SPD',line:s.line,station:s.station}, color:LINE_HEX[line]}));
+  }
+  if(type==='CRUSHER'||type==='CONVEYOR'){
+    if(line==='all') return ['A','B','N'].map(ln=>({label:'Line '+ln, child:{type,line:ln,station:'all'}, color:LINE_HEX[ln]}));
+    return stationsOf(type,line).map((s,i)=>({label:s.station, child:{type,line,station:s.station}, color:PALETTE[i%PALETTE.length]}));
+  }
+  return [];
+}
+
+function renderBreakdown(){
+  const tariff=parseFloat($('fTariff').value)||0;
+  const children=buildChildren().map(ch=>({...ch, v:childValue(ch.child, sel.year, sel.month)}));
+  children.sort((a,b)=>b.v-a.v);
+  const tot=children.reduce((s,c)=>s+c.v,0);
+  const body=$('breakBody');
+  if(!children.length || tot<=0){ body.innerHTML=`<tr><td colspan="4" class="muted" style="text-align:center;padding:22px">ไม่มีข้อมูลในงวดที่เลือก</td></tr>`; }
+  else body.innerHTML=children.map(c=>{
+    const pct=tot>0?(c.v/tot*100):0;
+    const canDrill = c.child.station==='all' && (c.child.type==='ALL' || (c.child.type!=='ALL' && (
+        (c.child.type==='CRUSHER'||c.child.type==='CONVEYOR') )) || c.child.type==='BWE'||c.child.type==='SPD');
+    return `<tr class="${canDrill?'clickable':''}" data-drill='${JSON.stringify(c.child)}'>
+      <td><span class="swatch" style="background:${c.color}"></span>${c.label}</td>
+      <td class="num">${fmt(c.v)}</td>
+      <td class="num muted">฿${fmtBaht(c.v*tariff)}</td>
+      <td><span class="share"><span class="muted num">${pct.toFixed(1)}%</span><span class="bar"><span style="width:${pct.toFixed(1)}%;background:${c.color}"></span></span></span></td>
+    </tr>`;
+  }).join('');
+
+  body.querySelectorAll('tr.clickable').forEach(tr=>{
+    tr.addEventListener('click',()=>{
+      const ch=JSON.parse(tr.dataset.drill);
+      if(ch.type==='ALL') return;
+      sel.type=ch.type;
+      if((ch.type==='CRUSHER'||ch.type==='CONVEYOR'||ch.type==='SPD')&&ch.line&&ch.line!=='all'){ sel.line=ch.line; }
+      sel.station='all';
+      refreshSummaryControls(); renderAll();
+    });
+  });
+
+  $('breakTitle').textContent = sel.station!=='all' ? `รายละเอียด — ${selectionText()}` :
+    (sel.type==='ALL'?'การใช้พลังงานแยกตามเครื่องจักร':
+     (sel.line==='all'&&(sel.type==='CRUSHER'||sel.type==='CONVEYOR'))?`${CAT_LABEL[sel.type]} — แยกตาม Line`:
+     `${selectionText()} — แยกตามจุด`);
+  return children;
+}
+
+/* ----- charts ----- */
+function trendSeries(){
+  let xs=[], ys=[], title='';
+  if(sel.year==='all' && sel.month==='all'){
+    xs=DATA.years.map(String); ys=DATA.years.map(y=>valueFor(y,'all')); title='รายปี';
+  } else if(sel.year==='all'){
+    xs=DATA.years.map(String); ys=DATA.years.map(y=>valueForMonth(y,sel.month)); title=TH_FULL[sel.month-1]+' (เทียบรายปี)';
+  } else {
+    xs=TH_ABBR.slice(); for(let m=1;m<=12;m++) ys.push(valueForMonth(sel.year,m)); title='ปี '+sel.year+' (รายเดือน)';
+  }
+  return {xs,ys,title};
+}
+function renderTrend(){
+  const {xs,ys,title}=trendSeries();
+  $('chartTitle').textContent='แนวโน้มการใช้พลังงาน — '+title;
+  $('chartDesc').textContent=selectionText()+' · หน่วย kWh';
+  const ctx=$('trendChart').getContext('2d');
+  const highlight = (sel.year!=='all'&&sel.month!=='all')?sel.month-1:-1;
+  const grad=ctx.createLinearGradient(0,0,0,300); grad.addColorStop(0,'rgba(255,182,72,.55)'); grad.addColorStop(1,'rgba(255,182,72,.05)');
+  const colors=ys.map((_,i)=> i===highlight?'#34d3cf':grad);
+  if(trendChart) trendChart.destroy();
+  trendChart=new Chart(ctx,{type:'bar',data:{labels:xs,datasets:[{data:ys,backgroundColor:colors,borderRadius:5,maxBarThickness:46}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.parsed.y)+' kWh'}}},
+      scales:{
+        x:{grid:{display:false},ticks:{color:'#90a6b1',font:{family:"'JetBrains Mono'",size:11}}},
+        y:{grid:{color:'#1d3039'},ticks:{color:'#637984',font:{family:"'JetBrains Mono'",size:10},callback:v=>v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'k':v}}
+      }}});
+}
+function renderDonut(children){
+  const data=children.filter(c=>c.v>0);
+  $('donutDesc').textContent = sel.station!=='all'?'รายการเดียว': (sel.type==='ALL'?'แยกตามเครื่องจักร':(sel.line==='all'&&(sel.type==='CRUSHER'||sel.type==='CONVEYOR')?'แยกตาม Line':'แยกตามจุด'));
+  const ctx=$('donutChart').getContext('2d');
+  if(donutChart) donutChart.destroy();
+  if(!data.length){ donutChart=null; ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height); return; }
+  donutChart=new Chart(ctx,{type:'doughnut',data:{labels:data.map(c=>c.label),datasets:[{data:data.map(c=>c.v),backgroundColor:data.map(c=>c.color),borderColor:'#15222a',borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'62%',
+      plugins:{legend:{position:'right',labels:{color:'#c8d6dd',boxWidth:10,boxHeight:10,font:{size:11.5},padding:9}},
+        tooltip:{callbacks:{label:c=>` ${c.label}: ${fmt(c.parsed)} kWh`}}}}});
+}
+
+function renderAll(){
+  renderCrumb(); renderKPIs();
+  const children=renderBreakdown();
+  renderTrend(); renderDonut(children);
+  renderTrendSummary();
+}
+
+/* ============================================================
+   แนวโน้มรายเครื่องจักร (sparkline + เทียบเดือนล่าสุด)
+   ============================================================ */
+function lastNMonths(n){
+  const ms=DATA.monthly.slice().sort((a,b)=>(a.year-b.year)||(a.month-b.month));
+  return ms.slice(-n);
+}
+function sparkline(vals, color){
+  const w=150,h=34,p=3; if(!vals.length) return '';
+  const max=Math.max.apply(null,vals.concat([1])), min=Math.min.apply(null,vals.concat([0]));
+  const rng=(max-min)||1;
+  const pts=vals.map((v,i)=>{ const x=p+i*((w-2*p)/Math.max(1,vals.length-1)); const y=h-p-((v-min)/rng)*(h-2*p); return [x,y]; });
+  const d=pts.map((pt,i)=>(i?'L':'M')+pt[0].toFixed(1)+' '+pt[1].toFixed(1)).join(' ');
+  const area=d+` L ${pts[pts.length-1][0].toFixed(1)} ${h-p} L ${pts[0][0].toFixed(1)} ${h-p} Z`;
+  const gid='g'+Math.random().toString(36).slice(2,7);
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".28"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+    <path d="${area}" fill="url(#${gid})"/><path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
+}
+function renderTrendSummary(){
+  const tariff=parseFloat($('fTariff').value)||0;
+  const months=lastNMonths(12);
+  const cats=[['BWE','BWE'],['CRUSHER','Crusher'],['CONVEYOR','Conveyor'],['SPD','SPD']];
+  const cur = months.length?months[months.length-1]:null;
+  const prev = months.length>1?months[months.length-2]:null;
+  $('trendSumDesc').textContent = cur ? `เดือนล่าสุด ${cur.label} เทียบกับ ${prev?prev.label:'—'} · เส้นย่อ = 12 เดือนล่าสุด` : 'ยังไม่มีข้อมูลรายเดือน';
+  $('trendCards').innerHTML = cats.map(([cat,label])=>{
+    const node={type:cat,line:'all',station:'all'};
+    const series=months.map(m=>childValue(node,m.year,m.month));
+    const now=cur?childValue(node,cur.year,cur.month):0;
+    const was=prev?childValue(node,prev.year,prev.month):0;
+    const diff=now-was; const pct = was>0?(diff/was*100):(now>0?100:0);
+    const dir = Math.abs(pct)<0.05?'flat':(diff>0?'up':'down');
+    const arrow = dir==='up'?'▲':dir==='down'?'▼':'■';
+    return `<div class="tcard">
+      <div class="top">
+        <div class="name"><span class="sw" style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${CAT_HEX[cat]}"></span>${label}</div>
+        <span class="delta ${dir}">${arrow} ${Math.abs(pct).toFixed(1)}%</span>
+      </div>
+      <div class="val">${fmt(now)} <span style="font-size:12px;color:var(--muted)">kWh</span></div>
+      <div class="sub">≈ ฿${fmtBaht(now*tariff)} · ${cur?cur.label:'—'}</div>
+      ${sparkline(series, CAT_HEX[cat])}
+    </div>`;
+  }).join('');
+}
+
+/* ============================================================
+   COMPARE PAGE
+   ============================================================ */
+const cmp = { mode:'year', years:[], months:[], year:'all', month:'all', node:{type:'ALL',line:'all',station:'all'}, picked:new Set(), expanded:new Set() };
+let compareChart=null;
+let cmpTreeNodes=[]; // [{key,label,depth,node,hasChildren,parent,color}]
+
+function buildTree(){
+  const T=[]; 
+  // BWE
+  T.push({key:'BWE',label:'BWE (รวม)',depth:0,node:{type:'BWE',line:'all',station:'all'},hasChildren:true,parent:null,color:CAT_HEX.BWE});
+  SCHEMA.byCat.BWE.leaves.forEach(l=>T.push({key:'BWE/'+l.station,label:l.station,depth:1,node:{type:'BWE',line:'all',station:l.station},hasChildren:false,parent:'BWE',color:CAT_HEX.BWE}));
+  // Crusher / Conveyor
+  [['CRUSHER','Crusher'],['CONVEYOR','Conveyor']].forEach(([cat,nm])=>{
+    T.push({key:cat,label:nm+' (รวม)',depth:0,node:{type:cat,line:'all',station:'all'},hasChildren:true,parent:null,color:CAT_HEX[cat]});
+    ['A','B','N'].forEach(ln=>{
+      const lk=cat+'/'+ln;
+      T.push({key:lk,label:nm+' · Line '+ln,depth:1,node:{type:cat,line:ln,station:'all'},hasChildren:true,parent:cat,color:LINE_HEX[ln]});
+      stationsOf(cat,ln).forEach(s=>T.push({key:lk+'/'+s.station,label:'Line '+ln+' · '+s.station,depth:2,node:{type:cat,line:ln,station:s.station},hasChildren:false,parent:lk,color:LINE_HEX[ln]}));
+    });
+  });
+  // SPD (lines are leaves)
+  T.push({key:'SPD',label:'SPD (รวม)',depth:0,node:{type:'SPD',line:'all',station:'all'},hasChildren:true,parent:null,color:CAT_HEX.SPD});
+  ['A','B','N'].forEach(ln=>{ if(SCHEMA.byCat.SPD.lines[ln]!=null) T.push({key:'SPD/'+ln,label:'SPD · Line '+ln,depth:1,node:{type:'SPD',line:ln,station:'SPD '+ln},hasChildren:false,parent:'SPD',color:LINE_HEX[ln]}); });
+  cmpTreeNodes=T;
+}
+function nodeVisible(n){ let p=n.parent; while(p){ if(!cmp.expanded.has(p)) return false; const par=cmpTreeNodes.find(x=>x.key===p); p=par?par.parent:null; } return true; }
+
+function pickerYearMonth(){ return cmp.mode==='year'?'ปี':cmp.mode==='month'?'เดือน':'เครื่องจักร'; }
+
+function renderPicker(){
+  const list=$('pickerList'), quick=$('pickerQuick');
+  $('pickerTitle').textContent='เลือก'+pickerYearMonth()+'ที่จะเปรียบเทียบ';
+  if(cmp.mode==='year'){
+    $('pickerDesc').textContent='ติ๊กปีที่ต้องการเทียบ (เลือกได้หลายปี)';
+    quick.innerHTML=`<button class="btn" data-q="all">ทั้งหมด</button><button class="btn" data-q="none">ล้าง</button><button class="btn" data-q="last3">3 ปีล่าสุด</button>`;
+    list.innerHTML=DATA.years.map(y=>`<label class="ck"><input type="checkbox" data-y="${y}" ${cmp.years.includes(y)?'checked':''}><span class="lbl">ปี ${y}</span></label>`).join('');
+    list.querySelectorAll('input').forEach(c=>c.addEventListener('change',()=>{ const y=parseInt(c.dataset.y,10); if(c.checked){ if(!cmp.years.includes(y)) cmp.years.push(y);} else cmp.years=cmp.years.filter(x=>x!==y); renderCompare(); }));
+  } else if(cmp.mode==='month'){
+    $('pickerDesc').textContent='ติ๊กเดือนที่ต้องการเทียบ (เลือกได้หลายเดือน)';
+    quick.innerHTML=`<button class="btn" data-q="all">ทั้งหมด</button><button class="btn" data-q="none">ล้าง</button>`;
+    list.innerHTML=TH_FULL.map((m,i)=>`<label class="ck"><input type="checkbox" data-m="${i+1}" ${cmp.months.includes(i+1)?'checked':''}><span class="lbl">${m}</span></label>`).join('');
+    list.querySelectorAll('input').forEach(c=>c.addEventListener('change',()=>{ const m=parseInt(c.dataset.m,10); if(c.checked){ if(!cmp.months.includes(m)) cmp.months.push(m);} else cmp.months=cmp.months.filter(x=>x!==m); renderCompare(); }));
+  } else {
+    $('pickerDesc').textContent='ติ๊กเครื่องจักร/Line/จุด ได้อิสระ · กด ▸ เพื่อกางจุดย่อย';
+    quick.innerHTML=`<button class="btn" data-q="cats">เฉพาะ 4 หมวด</button><button class="btn" data-q="none">ล้าง</button>`;
+    const rows=cmpTreeNodes.filter(nodeVisible).map(n=>{
+      const exp = n.hasChildren ? `<span class="exp" data-exp="${n.key}">${cmp.expanded.has(n.key)?'▾':'▸'}</span>` : `<span class="exp"></span>`;
+      const pad = 4+n.depth*16;
+      return `<div class="ck" style="padding-left:${pad}px">
+        ${exp}<input type="checkbox" data-k="${n.key}" ${cmp.picked.has(n.key)?'checked':''}>
+        <span class="sw" style="background:${n.color}"></span>
+        <span class="lbl" data-tgl="${n.key}">${n.label}</span></div>`;
+    }).join('');
+    list.innerHTML=rows;
+    list.querySelectorAll('input').forEach(c=>c.addEventListener('change',()=>{ const k=c.dataset.k; if(c.checked) cmp.picked.add(k); else cmp.picked.delete(k); renderCompare(); }));
+    list.querySelectorAll('[data-exp]').forEach(e=>e.addEventListener('click',()=>{ const k=e.dataset.exp; if(cmp.expanded.has(k)) cmp.expanded.delete(k); else cmp.expanded.add(k); renderPicker(); }));
+    list.querySelectorAll('[data-tgl]').forEach(e=>e.addEventListener('click',()=>{ const n=cmpTreeNodes.find(x=>x.key===e.dataset.tgl); if(n&&n.hasChildren){ const k=n.key; if(cmp.expanded.has(k)) cmp.expanded.delete(k); else cmp.expanded.add(k); renderPicker(); } }));
+  }
+  quick.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+    const q=b.dataset.q;
+    if(cmp.mode==='year'){ if(q==='all')cmp.years=DATA.years.slice(); else if(q==='none')cmp.years=[]; else if(q==='last3')cmp.years=DATA.years.slice(-3); }
+    else if(cmp.mode==='month'){ if(q==='all')cmp.months=Array.from({length:12},(_,i)=>i+1); else cmp.months=[]; }
+    else { if(q==='none')cmp.picked.clear(); else if(q==='cats'){ cmp.picked=new Set(['BWE','CRUSHER','CONVEYOR','SPD']); } }
+    renderPicker(); renderCompare();
+  }));
+}
+
+function renderCmpFilters(){
+  const wrap=$('cmpFilters'); let html='';
+  const yearOpts=`<option value="all">ทุกปีรวม</option>`+DATA.years.map(y=>`<option value="${y}" ${cmp.year==y?'selected':''}>${y}</option>`).join('');
+  const monthOpts=`<option value="all">ทั้งปี (รวม)</option>`+TH_FULL.map((m,i)=>`<option value="${i+1}" ${cmp.month==i+1?'selected':''}>${m}</option>`).join('');
+  const machineSel = machineSelectorHTML();
+  if(cmp.mode==='year'){
+    html=`${machineSel}
+      <div class="field"><label>ขอบเขตเดือน</label><select id="cmpMonth">${monthOpts}</select></div>`;
+  } else if(cmp.mode==='month'){
+    html=`${machineSel}
+      <div class="field"><label>ปี</label><select id="cmpYear">${yearOpts}</select></div>`;
+  } else {
+    html=`<div class="field"><label>ปี</label><select id="cmpYear">${yearOpts}</select></div>
+      <div class="field"><label>ขอบเขตเดือน</label><select id="cmpMonth">${monthOpts}</select></div>`;
+  }
+  wrap.innerHTML=html;
+  // wire machine selector
+  if($('cmpType')){
+    $('cmpType').value=cmp.node.type; $('cmpLine').value=cmp.node.line; $('cmpStation').value=cmp.node.station;
+    $('cmpType').addEventListener('change',e=>{ cmp.node={type:e.target.value,line:'all',station:'all'}; renderCmpFilters(); renderCompare(); });
+    $('cmpLine').addEventListener('change',e=>{ cmp.node={type:cmp.node.type,line:e.target.value,station:'all'}; renderCmpFilters(); renderCompare(); });
+    $('cmpStation').addEventListener('change',e=>{ cmp.node={...cmp.node,station:e.target.value}; renderCompare(); });
+    $('cmpLine').disabled=(cmp.node.type==='BWE'||cmp.node.type==='ALL');
+    $('cmpStation').disabled=(cmp.node.type==='ALL');
+  }
+  if($('cmpYear')) $('cmpYear').addEventListener('change',e=>{ cmp.year=e.target.value==='all'?'all':parseInt(e.target.value,10); renderCompare(); });
+  if($('cmpMonth')) $('cmpMonth').addEventListener('change',e=>{ cmp.month=e.target.value==='all'?'all':parseInt(e.target.value,10); renderCompare(); });
+}
+function machineSelectorHTML(){
+  const t=cmp.node.type,l=cmp.node.line,s=cmp.node.station;
+  const typeO=typeOptions().map(o=>`<option value="${o.v}" ${t===o.v?'selected':''}>${o.t}</option>`).join('');
+  const lineO=lineOptions(t).map(o=>`<option value="${o.v}" ${l===o.v?'selected':''}>${o.t}</option>`).join('');
+  const stO=stationOptions(t,l).map(o=>`<option value="${o.v}" ${s===o.v?'selected':''}>${o.t}</option>`).join('');
+  return `<div class="field"><label>เครื่องจักร</label><select id="cmpType">${typeO}</select></div>
+    <div class="field"><label>Line</label><select id="cmpLine">${lineO}</select></div>
+    <div class="field"><label>จุด</label><select id="cmpStation">${stO}</select></div>`;
+}
+
+function machineLabel(node){
+  if(node.type==='ALL') return 'ทุกเครื่องจักร';
+  let t=CAT_LABEL[node.type];
+  if(node.line && node.line!=='all') t+=' · Line '+node.line;
+  if(node.station && node.station!=='all') t+=' · '+node.station;
+  return t;
+}
+
+// คืน {labels[], series:[{name,color,data[]}], rows:[{label,value}]}
+function computeCompare(){
+  const tariff=parseFloat($('fTariff').value)||0;
+  if(cmp.mode==='year'){
+    const node=cmp.node, ys=cmp.years.slice().sort((a,b)=>a-b);
+    if(cmp.month==='all'){
+      const labels=TH_ABBR.slice();
+      const series=ys.map((y,i)=>({name:'ปี '+y,color:PALETTE[i%PALETTE.length],data:Array.from({length:12},(_,m)=>childValue(node,y,m+1))}));
+      const rows=ys.map((y,i)=>({key:y,label:'ปี '+y,color:PALETTE[i%PALETTE.length],value:childValue(node,y,'all')}));
+      return {labels,series,rows,kind:'line',unitName:machineLabel(node)+' · รายเดือน'};
+    } else {
+      const labels=ys.map(String);
+      const data=ys.map(y=>childValue(node,y,cmp.month));
+      const series=[{name:TH_FULL[cmp.month-1],color:CAT_HEX[node.type]||PALETTE[0],data}];
+      const rows=ys.map((y,i)=>({key:y,label:'ปี '+y,color:PALETTE[i%PALETTE.length],value:data[i]}));
+      return {labels,series,rows,kind:'bar',unitName:machineLabel(node)+' · '+TH_FULL[cmp.month-1]};
+    }
+  }
+  if(cmp.mode==='month'){
+    const node=cmp.node, ms=cmp.months.slice().sort((a,b)=>a-b);
+    const labels=ms.map(m=>TH_FULL[m-1]);
+    const data=ms.map(m=>childValue(node, cmp.year, m));
+    const series=[{name:(cmp.year==='all'?'ทุกปีรวม':'ปี '+cmp.year),color:CAT_HEX[node.type]||PALETTE[1],data}];
+    const rows=ms.map((m,i)=>({key:m,label:TH_FULL[m-1],color:PALETTE[i%PALETTE.length],value:data[i]}));
+    return {labels,series,rows,kind:'bar',unitName:machineLabel(node)+' · '+(cmp.year==='all'?'ทุกปีรวม':'ปี '+cmp.year)};
+  }
+  // machine
+  const picked=cmpTreeNodes.filter(n=>cmp.picked.has(n.key));
+  const labels=picked.map(n=>n.label);
+  const data=picked.map(n=>childValue(n.node, cmp.year, cmp.month));
+  const series=[{name:'kWh',color:'#ffb648',data,perColor:picked.map(n=>n.color)}];
+  const rows=picked.map((n,i)=>({key:n.key,label:n.label,color:n.color,value:data[i]}));
+  const pscope=(cmp.year==='all'?'ทุกปีรวม':'ปี '+cmp.year)+(cmp.month==='all'?' · ทั้งปี':' · '+TH_FULL[cmp.month-1]);
+  return {labels,series,rows,kind:'barMulti',unitName:pscope};
+}
+
+function renderCompare(){
+  if(!DATA||!SCHEMA) return;
+  const tariff=parseFloat($('fTariff').value)||0;
+  const C=computeCompare();
+  // crumb
+  $('cmpCrumb').innerHTML=`<b>${ {year:'เทียบปีต่อปี',month:'เทียบเดือนต่อเดือน',machine:'เทียบเครื่องจักร'}[cmp.mode] }</b> <span class="sep">/</span> <span>${C.unitName}</span>`;
+  $('cmpChartTitle').textContent='กราฟเปรียบเทียบ — '+C.unitName;
+  $('cmpChartDesc').textContent='หน่วย kWh' + (C.rows.length?'':' · ยังไม่ได้เลือกรายการ');
+  // chart
+  const ctx=$('compareChart').getContext('2d');
+  if(compareChart) compareChart.destroy();
+  if(C.rows.length){
+    if(C.kind==='line'){
+      compareChart=new Chart(ctx,{type:'line',data:{labels:C.labels,datasets:C.series.map(s=>({label:s.name,data:s.data,borderColor:s.color,backgroundColor:s.color,tension:.3,borderWidth:2,pointRadius:2,fill:false}))},
+        options:cmpOpts(true)});
+    } else if(C.kind==='barMulti'){
+      compareChart=new Chart(ctx,{type:'bar',data:{labels:C.labels,datasets:[{label:'kWh',data:C.series[0].data,backgroundColor:C.series[0].perColor,borderRadius:5,maxBarThickness:46}]},options:cmpOpts(false)});
+    } else {
+      compareChart=new Chart(ctx,{type:'bar',data:{labels:C.labels,datasets:C.series.map(s=>({label:s.name,data:s.data,backgroundColor:s.color,borderRadius:5,maxBarThickness:46}))},options:cmpOpts(false)});
+    }
+  } else { ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height); compareChart=null; }
+  // table
+  const tot=C.rows.reduce((s,r)=>s+r.value,0);
+  $('cmpTableDesc').textContent=`${C.rows.length} รายการ · รวม ${fmt(tot)} kWh`;
+  $('cmpHead').innerHTML=`<tr><th>รายการ</th><th>kWh</th><th>ค่าไฟ (฿)</th><th>สัดส่วน</th><th>Δ vs ก่อนหน้า</th></tr>`;
+  let prev=null;
+  $('cmpBody').innerHTML = C.rows.length ? C.rows.map(r=>{
+    const pct=tot>0?(r.value/tot*100):0;
+    let delta='—'; if(prev!=null){ const d=prev>0?((r.value-prev)/prev*100):(r.value>0?100:0); const cls=d>0.05?'up':(d<-0.05?'down':'flat'); const arrow=d>0.05?'▲':(d<-0.05?'▼':'■'); delta=`<span class="delta ${cls}" style="font-size:11.5px">${arrow} ${Math.abs(d).toFixed(1)}%</span>`; }
+    prev=r.value;
+    return `<tr>
+      <td><span class="swatch" style="background:${r.color}"></span>${r.label}</td>
+      <td class="num">${fmt(r.value)}</td>
+      <td class="num muted">฿${fmtBaht(r.value*tariff)}</td>
+      <td><span class="share"><span class="muted num">${pct.toFixed(1)}%</span><span class="bar"><span style="width:${pct.toFixed(1)}%;background:${r.color}"></span></span></span></td>
+      <td>${delta}</td></tr>`;
+  }).join('') : `<tr><td colspan="5" class="muted" style="text-align:center;padding:22px">เลือกรายการทางซ้ายเพื่อเริ่มเปรียบเทียบ</td></tr>`;
+}
+function cmpOpts(line){
+  return {responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:line,labels:{color:'#c8d6dd',boxWidth:10,boxHeight:10,font:{size:11.5}}},tooltip:{callbacks:{label:c=>`${c.dataset.label?c.dataset.label+': ':''}${fmt(c.parsed.y)} kWh`}}},
+    scales:{x:{grid:{display:false},ticks:{color:'#90a6b1',font:{family:"'JetBrains Mono'",size:11}}},
+      y:{grid:{color:'#1d3039'},ticks:{color:'#637984',font:{family:"'JetBrains Mono'",size:10},callback:v=>v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'k':v}}}};
+}
+
+function setCmpMode(mode){
+  cmp.mode=mode;
+  document.querySelectorAll('.cmp-mode').forEach(x=>x.classList.toggle('active',x.dataset.mode===mode));
+  // defaults on first use
+  if(mode==='year' && !cmp.years.length) cmp.years=DATA.years.slice(-3);
+  if(mode==='month' && !cmp.months.length) cmp.months=Array.from({length:12},(_,i)=>i+1);
+  if(mode==='machine' && !cmp.picked.size) cmp.picked=new Set(['BWE','CRUSHER','CONVEYOR','SPD']);
+  renderPicker(); renderCmpFilters(); renderCompare();
+}
+function initCompare(){
+  if(!SCHEMA) return;
+  buildTree();
+  if(!cmp.years.length) cmp.years=DATA.years.slice(-3);
+  if(!cmp.months.length) cmp.months=Array.from({length:12},(_,i)=>i+1);
+  if(!cmp.picked.size) cmp.picked=new Set(['BWE','CRUSHER','CONVEYOR','SPD']);
+  renderPicker(); renderCmpFilters(); renderCompare();
+}
+
+/* ============================================================
+   EXPORT — Excel (SheetJS) + PDF (print)
+   ============================================================ */
+function ts(){ const d=new Date(),p=n=>('0'+n).slice(-2); return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes()); }
+function aoaSheet(wb, name, aoa){ const ws=XLSX.utils.aoa_to_sheet(aoa); XLSX.utils.book_append_sheet(wb, ws, name.slice(0,31)); }
+function exportSummaryExcel(){
+  const tariff=parseFloat($('fTariff').value)||0;
+  const wb=XLSX.utils.book_new();
+  // sheet 1: breakdown ของมุมมองปัจจุบัน
+  const children=buildChildren().map(ch=>({...ch,v:childValue(ch.child,sel.year,sel.month)})).sort((a,b)=>b.v-a.v);
+  const tot=children.reduce((s,c)=>s+c.v,0);
+  const head=[['Dashboard ค่าไฟฟ้า — สรุป'],['มุมมอง',selectionText()],['งวด',periodText()],['อัตราค่าไฟ (฿/kWh)',tariff],['สร้างเมื่อ',new Date().toLocaleString('th-TH')],[],
+    ['รายการ','kWh','ค่าไฟ (฿)','สัดส่วน %']];
+  children.forEach(c=>head.push([c.label, Math.round(c.v), Math.round(c.v*tariff), tot>0?+(c.v/tot*100).toFixed(2):0]));
+  head.push(['รวม', Math.round(tot), Math.round(tot*tariff), 100]);
+  aoaSheet(wb,'สรุป',head);
+  // sheet 2: trend 12 เดือน รายหมวด
+  const months=lastNMonths(12);
+  const t2=[['เดือน','BWE','Crusher','Conveyor','SPD','รวม']];
+  months.forEach(m=>{ const row=[m.label]; let sum=0; ['BWE','CRUSHER','CONVEYOR','SPD'].forEach(cat=>{const v=childValue({type:cat,line:'all',station:'all'},m.year,m.month); row.push(Math.round(v)); sum+=v;}); row.push(Math.round(sum)); t2.push(row); });
+  aoaSheet(wb,'แนวโน้ม 12 เดือน',t2);
+  XLSX.writeFile(wb, 'energy-summary_'+ts()+'.xlsx');
+  toast('ดาวน์โหลด Excel แล้ว');
+}
+function exportCompareExcel(){
+  const tariff=parseFloat($('fTariff').value)||0;
+  const C=computeCompare(); const wb=XLSX.utils.book_new();
+  const modeName={year:'เทียบปีต่อปี',month:'เทียบเดือนต่อเดือน',machine:'เทียบเครื่องจักร'}[cmp.mode];
+  const tot=C.rows.reduce((s,r)=>s+r.value,0);
+  const t1=[['Dashboard ค่าไฟฟ้า — เปรียบเทียบ'],['โหมด',modeName],['ขอบเขต',C.unitName],['อัตราค่าไฟ (฿/kWh)',tariff],['สร้างเมื่อ',new Date().toLocaleString('th-TH')],[],
+    ['รายการ','kWh','ค่าไฟ (฿)','สัดส่วน %']];
+  C.rows.forEach(r=>t1.push([r.label,Math.round(r.value),Math.round(r.value*tariff),tot>0?+(r.value/tot*100).toFixed(2):0]));
+  t1.push(['รวม',Math.round(tot),Math.round(tot*tariff),100]);
+  aoaSheet(wb,'เปรียบเทียบ',t1);
+  // matrix series
+  const t2=[['',...C.labels]];
+  C.series.forEach(s=>t2.push([s.name,...s.data.map(v=>Math.round(v))]));
+  aoaSheet(wb,'ชุดข้อมูลกราฟ',t2);
+  XLSX.writeFile(wb,'energy-compare_'+ts()+'.xlsx');
+  toast('ดาวน์โหลด Excel แล้ว');
+}
+function exportPdf(){ window.print(); }
+
+/* ============================================================
+   DATA ENTRY PAGE
+   ============================================================ */
+function fillEntryControls(){
+  const yNow=new Date().getFullYear();
+  const years=[]; for(let y=2019;y<=Math.max(yNow+1, (DATA?DATA.years[DATA.years.length-1]:yNow));y++) years.push(y);
+  fillSelect($('eYear'), years.map(y=>({v:y,t:y}))); $('eYear').value=yNow;
+  fillSelect($('eMonth'), TH_FULL.map((m,i)=>({v:i+1,t:m}))); $('eMonth').value=new Date().getMonth()+1;
+  fillSelect($('eType'), [{v:'BWE',t:'BWE'},{v:'CRUSHER',t:'Crusher'},{v:'CONVEYOR',t:'Conveyor (Drive station)'},{v:'SPD',t:'SPD'}]);
+  syncEntryCascade();
+}
+function syncEntryCascade(){
+  const type=$('eType').value;
+  const lo = type==='BWE'?[{v:'all',t:'— ไม่มี Line —'}]:[{v:'A',t:'Line A'},{v:'B',t:'Line B'},{v:'N',t:'Line N'}];
+  fillSelect($('eLine'), lo); $('eLine').disabled=(type==='BWE');
+  const line=$('eLine').value;
+  let st=[];
+  if(type==='BWE') st=stationsOf('BWE','all');
+  else if(type==='SPD') st=stationsOf('SPD',line);
+  else st=stationsOf(type,line);
+  fillSelect($('eStation'), st.map(s=>({v:s.station,t:s.station})));
+  updateTargetPreview();
+}
+function resolveEntryCol(){
+  const type=$('eType').value, line=$('eLine').value, station=$('eStation').value;
+  let st;
+  if(type==='BWE') st=stationsOf('BWE','all').find(s=>s.station===station);
+  else if(type==='SPD') st=stationsOf('SPD',line).find(s=>s.station===station);
+  else st=stationsOf(type,line).find(s=>s.station===station);
+  return st?st.col:null;
+}
+function periodLabelOf(year,month){ return TH_ABBR[month-1]+'-'+String(year).slice(-2); }
+function updateTargetPreview(){
+  const col=resolveEntryCol();
+  const year=parseInt($('eYear').value,10), month=parseInt($('eMonth').value,10);
+  const pl=periodLabelOf(year,month);
+  const type=$('eType').value,line=$('eLine').value,station=$('eStation').value;
+  let where=CAT_LABEL[type]; if(type!=='BWE') where+=' · Line '+line; where+=' · '+station;
+  $('targetPreview').innerHTML = col==null
+    ? 'เลือกจุดให้ครบเพื่อระบุเป้าหมาย'
+    : `จะเขียนค่าไปที่ <b>แถว ${pl}</b> · คอลัมน์ลำดับ ${col+1} <br><span class="muted">${where}</span>`;
+}
+function renderPending(){
+  const list=$('pendingList');
+  if(!pending.length){ list.innerHTML=`<div class="empty">ยังไม่มีรายการ — กรอกค่าแล้วกด “เพิ่มเข้ารายการ”</div>`; $('submitBtn').disabled=true; return; }
+  list.innerHTML=pending.map((p,i)=>`
+    <div class="item">
+      <div class="t">${p.where}<small>งวด ${p.periodLabel}</small></div>
+      <div class="v num">${fmt(p.value)} kWh</div>
+      <button data-i="${i}" title="ลบ">✕</button>
+    </div>`).join('');
+  list.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ pending.splice(+b.dataset.i,1); renderPending(); }));
+  $('submitBtn').disabled=false;
+}
+function addEntry(){
+  const col=resolveEntryCol();
+  const valEl=$('eValue'); const value=parseFloat(valEl.value);
+  if(col==null){ toast('เลือกจุดให้ครบก่อน',true); return; }
+  if(isNaN(value)){ toast('กรอกค่า kWh',true); valEl.focus(); return; }
+  const year=parseInt($('eYear').value,10), month=parseInt($('eMonth').value,10);
+  const type=$('eType').value,line=$('eLine').value,station=$('eStation').value;
+  let where=CAT_LABEL[type]; if(type!=='BWE') where+=' · Line '+line; where+=' · '+station;
+  pending.push({colIndex:col, periodLabel:periodLabelOf(year,month), value, where, meta:{type,line,station,year,month}});
+  valEl.value=''; renderPending(); toast('เพิ่มรายการแล้ว');
+}
+async function submitEntries(){
+  const url=($('appsUrl').value||RC.APPS_SCRIPT_URL||'').trim();
+  if(!url){ toast('กรอก Apps Script URL ก่อน',true); $('appsUrl').focus(); return; }
+  lsSet('appsUrl',url); $('appsUrl').value=url; updateUrlSavedHint();
+  const btn=$('submitBtn'); btn.disabled=true; const old=btn.innerHTML; btn.textContent='กำลังส่ง…';
+  const createIfMissing = $('createMissing') ? $('createMissing').checked : true;
+  const payload={ sheetId:RC.SHEET_ID, gid:RC.GID, createIfMissing, entries:pending.map(p=>({colIndex:p.colIndex,periodLabel:p.periodLabel,value:p.value,meta:p.meta})) };
+  try{
+    const res=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});
+    let okCount=pending.length, msg='ส่งข้อมูลแล้ว';
+    try{ const j=await res.json();
+      if(j && j.results){ okCount=j.results.filter(r=>r.ok).length; const created=j.results.filter(r=>r.created).length; const bad=j.results.filter(r=>!r.ok);
+        if(bad.length) msg=`สำเร็จ ${okCount}/${j.results.length} · มีปัญหา: ${bad[0].error||''}`+(bad[0].last?` (เดือนล่าสุดในชีต: ${bad[0].last})`:'');
+        else msg=`บันทึกสำเร็จ ${okCount} รายการ`+(created?` · สร้างแถวใหม่ ${created}`:'');
+      } else if(j && j.ok===false){ msg='ผิดพลาด: '+(j.error||''); }
+    }catch(_){ msg='ส่งข้อมูลแล้ว — โปรดตรวจสอบใน Sheet'; }
+    toast(msg, msg.includes('ปัญหา'));
+    pending=[]; renderPending();
+    setTimeout(loadData, 1200); // ดึงข้อมูลใหม่ให้ Dashboard อัปเดต
+  }catch(err){
+    toast('ส่งไม่สำเร็จ: '+err.message+' (ตรวจ URL/สิทธิ์ Deploy)', true);
+  }finally{ btn.disabled=false; btn.innerHTML=old; }
+}
+
+/* ============================================================
+   LOAD (schema once + data, with polling)
+   ============================================================ */
+let schemaLoaded=false;
+async function loadData(isPoll){
+  try{
+    if(!isPoll) setStatus('loading','กำลังโหลดข้อมูล…');
+    if(!schemaLoaded){
+      const sresp=await gvizFetch('A3:CZ4');
+      SCHEMA=buildSchema(sresp);
+      if(!SCHEMA.byCat.BWE.leaves.length && !SCHEMA.grandCol && SCHEMA.cols.every(c=>!c||c.role==='skip'))
+        throw new Error('โครงสร้างหัวตารางไม่ตรง — ตรวจ GID/ช่วงข้อมูล');
+      schemaLoaded=true;
+    }
+    const dresp=await gvizFetch('A6:CZ400');
+    DATA=buildData(dresp, SCHEMA.width);
+
+    if(sel.year==='all' && !DATA.years.includes('all')){ /* ok */ }
+    refreshSummaryControls();
+    fillEntryControls();
+    renderAll();
+    initCompare();
+    const now=new Date();
+    setStatus('live','อัปเดตล่าสุด '+now.toLocaleTimeString('th-TH'));
+  }catch(err){
+    setStatus('err', err.message||'เชื่อมต่อไม่ได้');
+    if(!isPoll) toast(err.message||'เชื่อมต่อไม่ได้', true);
+  }
+}
+function startPolling(){
+  if(pollTimer) clearInterval(pollTimer);
+  const sec=parseInt(RC.POLL_SECONDS,10);
+  if(sec>0) pollTimer=setInterval(()=>loadData(true), sec*1000);
+}
+
+/* ============================================================
+   EVENTS
+   ============================================================ */
+function bindSummaryEvents(){
+  $('fType').addEventListener('change',e=>{ sel.type=e.target.value; sel.line='all'; sel.station='all'; refreshSummaryControls(); renderAll(); });
+  $('fLine').addEventListener('change',e=>{ sel.line=e.target.value; sel.station='all'; refreshSummaryControls(); renderAll(); });
+  $('fStation').addEventListener('change',e=>{ sel.station=e.target.value; renderAll(); });
+  $('fYear').addEventListener('change',e=>{ sel.year=e.target.value==='all'?'all':parseInt(e.target.value,10); renderAll(); });
+  $('fMonth').addEventListener('change',e=>{ sel.month=e.target.value==='all'?'all':parseInt(e.target.value,10); renderAll(); });
+  $('fTariff').addEventListener('input',()=>{ lsSet('tariff',$('fTariff').value); renderKPIs(); renderBreakdown(); renderTrendSummary(); if(DATA&&SCHEMA) renderCompare(); });
+}
+function bindEntryEvents(){
+  $('eType').addEventListener('change',syncEntryCascade);
+  $('eLine').addEventListener('change',()=>{ syncEntryCascade(); });
+  $('eStation').addEventListener('change',updateTargetPreview);
+  $('eYear').addEventListener('change',updateTargetPreview);
+  $('eMonth').addEventListener('change',updateTargetPreview);
+  $('addEntryBtn').addEventListener('click',addEntry);
+  $('submitBtn').addEventListener('click',submitEntries);
+  $('copyCode').addEventListener('click',()=>{ navigator.clipboard.writeText($('gsCode').textContent).then(()=>toast('คัดลอกโค้ดแล้ว')); });
+  $('appsUrl').addEventListener('change',()=>{ lsSet('appsUrl',$('appsUrl').value.trim()); updateUrlSavedHint(); });
+  $('createMissing').addEventListener('change',()=>lsSet('createMissing',$('createMissing').checked?'1':'0'));
+  $('urlClear').addEventListener('click',e=>{ e.preventDefault(); lsSet('appsUrl',''); $('appsUrl').value=''; updateUrlSavedHint(); toast('ลบ URL ที่จำไว้แล้ว'); });
+}
+function bindCompareEvents(){
+  document.querySelectorAll('.cmp-mode').forEach(el=>el.addEventListener('click',()=>setCmpMode(el.dataset.mode)));
+  $('cmpExcel').addEventListener('click',exportCompareExcel);
+  $('cmpPdf').addEventListener('click',exportPdf);
+  $('sumExcel').addEventListener('click',exportSummaryExcel);
+  $('sumPdf').addEventListener('click',exportPdf);
+}
+function bindTabs(){
+  document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active'); $('page-'+t.dataset.page).classList.add('active');
+    if(t.dataset.page==='compare' && DATA && SCHEMA) renderCompare();
+  }));
+}
+function bindChrome(){
+  $('refreshBtn').addEventListener('click',()=>loadData(false));
+  const open=v=>{ $('drawer').classList.toggle('open',v); $('drawerBack').classList.toggle('open',v); };
+  $('settingsBtn').addEventListener('click',()=>{ $('sSheetId').value=RC.SHEET_ID; $('sGid').value=RC.GID; $('sPoll').value=RC.POLL_SECONDS; open(true); });
+  $('drawerBack').addEventListener('click',()=>open(false));
+  $('saveSettings').addEventListener('click',()=>{
+    RC.SHEET_ID=$('sSheetId').value.trim()||RC.SHEET_ID; RC.GID=$('sGid').value.trim()||'0'; RC.POLL_SECONDS=parseInt($('sPoll').value,10)||0;
+    lsSet('sheetId',RC.SHEET_ID); lsSet('gid',RC.GID); lsSet('poll',RC.POLL_SECONDS);
+    schemaLoaded=false; open(false); loadData(false); startPolling(); toast('บันทึกการตั้งค่าแล้ว');
+  });
+}
+
+/* ---------- Apps Script code อ่านจาก DOM (#gsCodeSrc) เพื่อกันการ escape ผิด ---------- */
+
+/* ============================================================
+   จดจำการตั้งค่าไว้ในเบราว์เซอร์ (localStorage) — อยู่เฉพาะเครื่องนี้
+   ============================================================ */
+const LSK='cvdash:';
+function lsGet(k){ try{ return localStorage.getItem(LSK+k); }catch(_){ return null; } }
+function lsSet(k,v){ try{ if(v==null||v==='') localStorage.removeItem(LSK+k); else localStorage.setItem(LSK+k,String(v)); }catch(_){ } }
+function updateUrlSavedHint(){
+  const has=!!($('appsUrl').value.trim()) && !!lsGet('appsUrl');
+  const el=$('urlSaved'); if(el) el.style.display = has ? 'inline' : 'none';
+}
+function loadSavedConfig(){
+  // CONFIG (hardcode) มาก่อนเสมอ ถ้าไม่ได้ตั้งจึงใช้ค่าที่จำไว้
+  const u=lsGet('appsUrl'); if(u && !RC.APPS_SCRIPT_URL) RC.APPS_SCRIPT_URL=u;
+  const sid=lsGet('sheetId'); if(sid) RC.SHEET_ID=sid;
+  const gid=lsGet('gid'); if(gid!=null && gid!=='') RC.GID=gid;
+  const poll=lsGet('poll'); if(poll!=null && poll!=='') RC.POLL_SECONDS=parseInt(poll,10)||0;
+  const tar=lsGet('tariff'); if(tar!=null && tar!=='') RC.TARIFF=parseFloat(tar)||RC.TARIFF;
+  const cm=lsGet('createMissing'); if(cm!=null && $('createMissing')) $('createMissing').checked=(cm==='1');
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+function init(){
+  loadSavedConfig();
+  $('fTariff').value=Number(RC.TARIFF).toFixed(2);
+  $('appsUrl').value=RC.APPS_SCRIPT_URL||'';
+  $('gsCode').textContent=($('gsCodeSrc')?$('gsCodeSrc').textContent:'').trim();
+  bindTabs(); bindChrome(); bindSummaryEvents(); bindEntryEvents(); bindCompareEvents();
+  updateUrlSavedHint();
+  renderPending();
+  loadData(false).then(startPolling);
+}
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
